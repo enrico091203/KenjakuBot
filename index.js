@@ -472,6 +472,9 @@ function createBanSystem(cfg) {
             .setDescription("Duration in days (leave empty = permanent)")
         )
         .addStringOption((o) => o.setName("reason").setDescription("Reason for the ban"))
+        .addStringOption((o) =>
+          o.setName("user_id").setDescription("Discord user ID (optional; for users not in the server)")
+        )
     );
 
     // subcommand: remove
@@ -624,7 +627,17 @@ function createBanSystem(cfg) {
       const durationMakyo = interaction.options.getInteger("duration_makyo");
       const reason = interaction.options.getString("reason");
 
-      const { name, discordId, member } = await resolveName(interaction.guild, rawName);
+      let { name, discordId, member } = await resolveName(interaction.guild, rawName);
+
+      // Optional manual Discord ID (works for users not in the server)
+      const userIdInput = interaction.options.getString("user_id");
+      if (userIdInput) {
+        discordId = userIdInput.replace(/\D/g, "");
+        if (!/^\d{17,20}$/.test(discordId))
+          return interaction.editReply({ content: "❌ Invalid Discord user ID." });
+        member = await interaction.guild.members.fetch(discordId).catch(() => null);
+        if (member) name = member.displayName;
+      }
 
       // Duplicate check
       if (bans.some((b) => b.name.toLowerCase() === name.toLowerCase() && isActive(b))) {
