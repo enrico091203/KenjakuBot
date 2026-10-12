@@ -276,15 +276,15 @@ function createBanSystem(cfg) {
   }
 
   async function saveChannelData() {
-    saveChannelData();
+    saveJSON(CHANNEL_FILE, channelData);
     if (USE_DB()) await db.setConfig(KEY(cfg.prefix, "channel"), channelData);
   }
   async function saveMessageData() {
-    saveMessageData();
+    saveJSON(MESSAGE_FILE, messageData);
     if (USE_DB()) await db.setConfig(KEY(cfg.prefix, "message"), messageData);
   }
   async function saveAuthorized() {
-    saveAuthorized();
+    saveJSON(AUTHORIZED_FILE, authorized);
     if (USE_DB()) await db.setConfig(KEY(cfg.prefix, "authorized"), authorized);
   }
 
