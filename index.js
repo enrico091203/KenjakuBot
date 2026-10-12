@@ -376,7 +376,7 @@ function createBanSystem(cfg) {
             const end = fmtDate(b.endDateSchool);
             const r = b.reason ? ` — *${b.reason}*` : "";
             const start = fmtDate(b.startDate);
-            lines.push(`\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}** ─ ${start} → ${end}${r}`);
+            lines.push(`\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}**${b.gameId ? ` \`[ID: ${b.gameId}]\`` : ""} ─ ${start} → ${end}${r}`);
           });
           lines.push("");
         }
@@ -387,7 +387,7 @@ function createBanSystem(cfg) {
             const start = fmtDate(b.startDate);
             const end = fmtDate(b.endDateMakyo);
             const r = b.reason ? ` — *${b.reason}*` : "";
-            lines.push(`\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}** ─ ${start} → ${end}${r}`);
+            lines.push(`\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}**${b.gameId ? ` \`[ID: ${b.gameId}]\`` : ""} ─ ${start} → ${end}${r}`);
           });
           lines.push("");
         }
@@ -407,7 +407,7 @@ function createBanSystem(cfg) {
 
             const start = fmtDate(b.startDate);
             lines.push(
-              `\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}** — ${start} → ${sTag} School: ${sEnd}  |  ${mTag} Makyo: ${mEnd}${r}`
+              `\`${i + 1}.\` **${b.discordId ? `<@${b.discordId}>` : b.name}**${b.gameId ? ` \`[ID: ${b.gameId}]\`` : ""} — ${start} → ${sTag} School: ${sEnd}  |  ${mTag} Makyo: ${mEnd}${r}`
             );
           });
           lines.push("");
@@ -473,7 +473,7 @@ function createBanSystem(cfg) {
         )
         .addStringOption((o) => o.setName("reason").setDescription("Reason for the ban"))
         .addStringOption((o) =>
-          o.setName("user_id").setDescription("Discord user ID (optional; for users not in the server)")
+          o.setName("game_id").setDescription("In-game player ID (optional)")
         )
     );
 
@@ -629,15 +629,8 @@ function createBanSystem(cfg) {
 
       let { name, discordId, member } = await resolveName(interaction.guild, rawName);
 
-      // Optional manual Discord ID (works for users not in the server)
-      const userIdInput = interaction.options.getString("user_id");
-      if (userIdInput) {
-        discordId = userIdInput.replace(/\D/g, "");
-        if (!/^\d{17,20}$/.test(discordId))
-          return interaction.editReply({ content: "❌ Invalid Discord user ID." });
-        member = await interaction.guild.members.fetch(discordId).catch(() => null);
-        if (member) name = member.displayName;
-      }
+      // Optional in-game player ID
+      const gameId = (interaction.options.getString("game_id") || "").trim() || null;
 
       // Duplicate check
       if (bans.some((b) => b.name.toLowerCase() === name.toLowerCase() && isActive(b))) {
@@ -675,6 +668,7 @@ function createBanSystem(cfg) {
         name,
         type,
         discordId,
+        gameId,
         startDate: banStartDate,
         reason: reason || null,
         createdAt: new Date().toISOString(),
@@ -740,6 +734,7 @@ function createBanSystem(cfg) {
       }
 
       if (reason) reply += `\n📝 Reason: *${reason}*`;
+      if (gameId) reply += `\n🎮 Game ID: \`${gameId}\``;
 
       return interaction.editReply({ content: reply });
     }
