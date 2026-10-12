@@ -8,6 +8,10 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   ChannelType,
+  ModalBuilder,
+  ActionRowBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
@@ -273,6 +277,38 @@ function createBanSystem(cfg) {
   function persistBans() {
     saveJSON(BANS_FILE, bans);
     if (USE_DB()) db.saveBans(cfg.prefix, bans);
+  }
+
+  // Bulk-add permanent bans. items = [{ name, gameId }] -> { added:[], skipped:[] }
+  function addBansBatch(items, createdBy) {
+    const startDate = getNextMonday().toISOString();
+    const added = [];
+    const skipped = [];
+    for (const { name, gameId } of items) {
+      if (!name) continue;
+      if (bans.some((b) => b.name.toLowerCase() === name.toLowerCase() && isActive(b))) {
+        skipped.push(name);
+        continue;
+      }
+      bans.push({
+        id: uid(),
+        name,
+        type: "both",
+        discordId: null,
+        gameId: gameId || null,
+        startDate,
+        reason: null,
+        createdAt: new Date().toISOString(),
+        createdBy: createdBy || "bulk",
+        durationSchool: null,
+        endDateSchool: null,
+        durationMakyo: null,
+        endDateMakyo: null,
+      });
+      added.push(name);
+    }
+    if (added.length) persistBans();
+    return { added, skipped };
   }
 
   async function saveChannelData() {
@@ -801,7 +837,7 @@ function createBanSystem(cfg) {
     }
   }
 
-  return { buildCommand, handleInteraction, cleanExpiredBans, updateBanList, isAuthorized, initFromDB, persistBans, saveChannelData, saveMessageData, saveAuthorized };
+  return { buildCommand, handleInteraction, cleanExpiredBans, updateBanList, isAuthorized, initFromDB, persistBans, addBansBatch, saveChannelData, saveMessageData, saveAuthorized };
 }
 
 // ─── Instantiate the two independent ban systems ──────────────────────────────
@@ -866,6 +902,11 @@ client.once("ready", async () => {
         .addChannelTypes(ChannelType.GuildText)
     );
 
+  // ── Bulk add permanent bans command ─────────────────────────────────────────
+  const bulkPermaCmd = new SlashCommandBuilder()
+    .setName("bulkaddperma")
+    .setDescription("Bulk add permanent bans (opens an input dialog)");
+
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     const commands = [
@@ -873,6 +914,7 @@ client.once("ready", async () => {
       nvmbanSystem.buildCommand().toJSON(),
       bountyCmd.toJSON(),
       createAnnounceCmd.toJSON(),
+      bulkPermaCmd.toJSON(),
     ];
     if (GUILD_IDS.length > 0) {
       for (const gid of GUILD_IDS) {
@@ -1077,6 +1119,65 @@ client.on("interactionCreate", async (interaction) => {
   return interaction.editReply({
     content: `✅ Announcement sent to <#${channel.id}>.`,
   });
+});
+
+// =============================================================================
+//  BULK ADD PERMANENT BANS (/bulkaddperma)
+// =============================================================================
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand() || interaction.commandName !== "bulkaddperma") return;
+
+  if (!isAuthorizedGlobal(interaction.user.id)) {
+    return interaction.reply({
+      content: "❌ You don't have permission to use this command.",
+      ephemeral: true,
+    });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId("bulkperma_modal")
+    .setTitle("Bulk Permanent Bans");
+
+  const input = new TextInputBuilder()
+    .setCustomId("bulkperma_input")
+    .setLabel("Name|GameID — one per line or comma-separated")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setPlaceholder("Iceee|300043015302914\nakua|300013015702179");
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isModalSubmit() || interaction.customId !== "bulkperma_modal") return;
+
+  if (!isAuthorizedGlobal(interaction.user.id)) {
+    return interaction.reply({ content: "❌ You don't have permission.", ephemeral: true });
+  }
+
+  const raw = interaction.fields.getTextInputValue("bulkperma_input");
+  const items = raw
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [name, ...rest] = part.split("|");
+      return { name: (name || "").trim(), gameId: rest.join("|").trim() || null };
+    })
+    .filter((i) => i.name);
+
+  if (!items.length) {
+    return interaction.reply({ content: "❌ No valid entries found.", ephemeral: true });
+  }
+
+  const { added, skipped } = bannedSystem.addBansBatch(items, interaction.user.tag);
+  if (added.length) await bannedSystem.updateBanList(client);
+
+  let reply = `✅ **${added.length}** permanent ban(s) added.`;
+  if (skipped.length) reply += `\n⚠️ ${skipped.length} skipped (already banned): ${skipped.join(", ")}`;
+  return interaction.reply({ content: reply, ephemeral: true });
 });
 
 // =============================================================================
